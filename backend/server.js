@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 5000;
 // CORS configuration for production
 const corsOptions = {
   origin: process.env.NODE_ENV === 'production' 
-    ? ['https://pausal-invoice-app.onrender.com', 'https://pausal-invoice-frontend.onrender.com']
+    ? true // Allow all origins in production for Railway
     : ['http://localhost:3000'],
   credentials: true
 };
