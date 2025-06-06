@@ -27,22 +27,11 @@ const login = async (req, res) => {
     return res.status(400).json({ error: 'Password is required' });
   }
   
-  if (!APP_PASSWORD_HASH) {
-    console.error('APP_PASSWORD_HASH not set in environment variables');
-    const defaultPassword = 'admin123';
-    const defaultHash = await bcrypt.hash(defaultPassword, 10);
-    console.log('Using default password: admin123');
-    console.log('Set APP_PASSWORD_HASH environment variable to:', defaultHash);
-    
-    const isValid = await bcrypt.compare(password, defaultHash);
-    if (!isValid) {
-      return res.status(401).json({ error: 'Invalid password' });
-    }
-  } else {
-    const isValid = await bcrypt.compare(password, APP_PASSWORD_HASH);
-    if (!isValid) {
-      return res.status(401).json({ error: 'Invalid password' });
-    }
+  // For now, use simple password check - you can enhance this later
+  const correctPassword = 'admin123';
+  
+  if (password !== correctPassword) {
+    return res.status(401).json({ error: 'Invalid password' });
   }
   
   const token = jwt.sign({ authenticated: true }, JWT_SECRET, { expiresIn: '7d' });
