@@ -30,7 +30,7 @@ import {
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
-import { format, startOfYear, endOfYear } from 'date-fns';
+import { format, startOfYear, endOfYear, getYear } from 'date-fns';
 import { invoiceService, customerService, settingsService } from '../services/api';
 
 function KPOKnjiga() {
@@ -41,6 +41,7 @@ function KPOKnjiga() {
   const [pdfLoading, setPdfLoading] = useState(false);
   const [error, setError] = useState(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  const [selectedYear, setSelectedYear] = useState(getYear(new Date()));
 
   // Filters
   const [filters, setFilters] = useState({
@@ -58,6 +59,16 @@ function KPOKnjiga() {
     applyFilters();
   }, [invoices, filters]);
 
+  useEffect(() => {
+    // Update date filters when year changes
+    const yearDate = new Date(selectedYear, 0, 1);
+    setFilters(prev => ({
+      ...prev,
+      fromDate: startOfYear(yearDate),
+      toDate: endOfYear(yearDate),
+    }));
+  }, [selectedYear]);
+
   const fetchData = async () => {
     try {
       setLoading(true);
@@ -66,9 +77,18 @@ function KPOKnjiga() {
         customerService.getAll(),
       ]);
       
-      // Only include non-draft invoices for KPO knjiga
-      const validInvoices = invoicesResponse.data.filter(invoice => invoice.status !== 'draft');
-      setInvoices(validInvoices);
+      // Sort by date and add running total (include all invoices for KPO)
+      const validInvoices = invoicesResponse.data
+        .sort((a, b) => new Date(a.invoice_date) - new Date(b.invoice_date));
+      
+      // Add running total
+      let runningTotal = 0;
+      const invoicesWithTotal = validInvoices.map(invoice => {
+        runningTotal += invoice.total_rsd || 0;
+        return { ...invoice, running_total: runningTotal };
+      });
+      
+      setInvoices(invoicesWithTotal);
       setCustomers(customersResponse.data);
       setError(null);
     } catch (err) {
@@ -131,9 +151,9 @@ function KPOKnjiga() {
 
   const getStatusLabel = (status) => {
     const labels = {
-      sent: 'Poslato / Sent',
-      paid: 'Plaćeno / Paid',
-      overdue: 'Kasni / Overdue',
+      sent: 'Sent',
+      paid: 'Paid',
+      overdue: 'Overdue',
     };
     return labels[status] || status;
   };
@@ -208,31 +228,29 @@ function KPOKnjiga() {
         'Broj fakture',
         'Datum',
         'Kupac',
-        'Opis',
+        'Iznos (EUR/USD)',
         'Iznos (RSD)',
-        'Status'
+        'Ukupno'
       ];
 
       // Table data
+      let runningTotal = 0;
       const tableData = filteredInvoices.map((invoice, index) => {
         const customer = customers.find(c => c.id === invoice.customer_id);
         const customerName = customer ? 
           (customer.company || customer.name) : 
           invoice.customer_name || 'N/A';
 
-        // Get first item description or summary
-        const description = invoice.items && invoice.items.length > 0 ? 
-          invoice.items[0].description : 
-          'Usluga / Service';
+        runningTotal += invoice.total_rsd || 0;
 
         return [
           (index + 1).toString(),
           invoice.invoice_number,
           formatDate(invoice.invoice_date),
-          customerName.substring(0, 25) + (customerName.length > 25 ? '...' : ''),
-          description.substring(0, 30) + (description.length > 30 ? '...' : ''),
+          customerName.substring(0, 30) + (customerName.length > 30 ? '...' : ''),
+          invoice.currency !== 'RSD' ? `${invoice.currency} ${invoice.total?.toFixed(2)}` : '-',
           formatCurrency(invoice.total_rsd || 0).replace(/\s/g, ' '),
-          getStatusLabel(invoice.status)
+          formatCurrency(runningTotal).replace(/\s/g, ' ')
         ];
       });
 
@@ -253,13 +271,13 @@ function KPOKnjiga() {
           fontStyle: 'bold',
         },
         columnStyles: {
-          0: { halign: 'center', cellWidth: 15 },
+          0: { halign: 'center', cellWidth: 12 },
           1: { halign: 'center', cellWidth: 25 },
           2: { halign: 'center', cellWidth: 20 },
-          3: { halign: 'left', cellWidth: 35 },
-          4: { halign: 'left', cellWidth: 40 },
-          5: { halign: 'right', cellWidth: 25 },
-          6: { halign: 'center', cellWidth: 20 }
+          3: { halign: 'left', cellWidth: 45 },
+          4: { halign: 'right', cellWidth: 25 },
+          5: { halign: 'right', cellWidth: 28 },
+          6: { halign: 'right', cellWidth: 30 }
         }
       });
 
@@ -289,10 +307,10 @@ function KPOKnjiga() {
       const filename = `KPO_Knjiga_${fromDateStr.replace(/\./g, '_')}_${toDateStr.replace(/\./g, '_')}.pdf`;
       doc.save(filename);
 
-      showSnackbar('KPO knjiga downloaded successfully / KPO knjiga uspešno preuzeta', 'success');
+      showSnackbar('KPO book downloaded successfully', 'success');
     } catch (error) {
       console.error('Error generating KPO PDF:', error);
-      showSnackbar('Failed to generate KPO PDF / Greška pri generisanju KPO PDF-a', 'error');
+      showSnackbar('Failed to generate KPO PDF', 'error');
     } finally {
       setPdfLoading(false);
     }
@@ -321,9 +339,27 @@ function KPOKnjiga() {
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
       <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Typography variant="h4" component="h1">
-          KPO Knjiga / Income Record Book
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Typography variant="h4" component="h1">
+            KPO Book
+          </Typography>
+          <FormControl size="small" sx={{ minWidth: 120 }}>
+            <Select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(e.target.value)}
+              displayEmpty
+            >
+              {[...Array(10)].map((_, i) => {
+                const year = new Date().getFullYear() - i;
+                return (
+                  <MenuItem key={year} value={year}>
+                    {year}
+                  </MenuItem>
+                );
+              })}
+            </Select>
+          </FormControl>
+        </Box>
         <Button
           variant="contained"
           startIcon={pdfLoading ? <CircularProgress size={16} /> : <PdfIcon />}
@@ -344,24 +380,24 @@ function KPOKnjiga() {
       <Paper sx={{ p: 2, mb: 3 }}>
         <Typography variant="h6" gutterBottom>
           <FilterIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-          Filteri / Filters
+          Filters
         </Typography>
         <LocalizationProvider dateAdapter={AdapterDateFns}>
           <Grid container spacing={2}>
             <Grid item xs={12} sm={3}>
               <DatePicker
-                label="Od datuma / From Date"
+                label="From Date"
                 value={filters.fromDate}
                 onChange={(value) => handleFilterChange('fromDate', value)}
-                renderInput={(params) => <TextField {...params} fullWidth size="small" />}
+                slotProps={{ textField: { fullWidth: true, size: 'small' } }}
               />
             </Grid>
             <Grid item xs={12} sm={3}>
               <DatePicker
-                label="Do datuma / To Date"
+                label="To Date"
                 value={filters.toDate}
                 onChange={(value) => handleFilterChange('toDate', value)}
-                renderInput={(params) => <TextField {...params} fullWidth size="small" />}
+                slotProps={{ textField: { fullWidth: true, size: 'small' } }}
               />
             </Grid>
             <Grid item xs={12} sm={3}>
@@ -372,22 +408,22 @@ function KPOKnjiga() {
                   label="Status"
                   onChange={(e) => handleFilterChange('status', e.target.value)}
                 >
-                  <MenuItem value="all">Svi / All</MenuItem>
-                  <MenuItem value="sent">Poslato / Sent</MenuItem>
-                  <MenuItem value="paid">Plaćeno / Paid</MenuItem>
-                  <MenuItem value="overdue">Kasni / Overdue</MenuItem>
+                  <MenuItem value="all">All</MenuItem>
+                  <MenuItem value="sent">Sent</MenuItem>
+                  <MenuItem value="paid">Paid</MenuItem>
+                  <MenuItem value="overdue">Overdue</MenuItem>
                 </Select>
               </FormControl>
             </Grid>
             <Grid item xs={12} sm={3}>
               <FormControl fullWidth size="small">
-                <InputLabel>Kupac / Customer</InputLabel>
+                <InputLabel>Customer</InputLabel>
                 <Select
                   value={filters.customer}
-                  label="Kupac / Customer"
+                  label="Customer"
                   onChange={(e) => handleFilterChange('customer', e.target.value)}
                 >
-                  <MenuItem value="all">Svi / All</MenuItem>
+                  <MenuItem value="all">All</MenuItem>
                   {customers.map((customer) => (
                     <MenuItem key={customer.id} value={customer.id}>
                       {customer.company || customer.name}
@@ -405,12 +441,12 @@ function KPOKnjiga() {
         <Grid container spacing={2}>
           <Grid item xs={12} sm={4}>
             <Typography variant="h6">
-              Ukupno faktura / Total Invoices: <strong>{totals.count}</strong>
+              Total Invoices: <strong>{totals.count}</strong>
             </Typography>
           </Grid>
           <Grid item xs={12} sm={4}>
             <Typography variant="h6">
-              Ukupan prihod / Total Income: <strong>{formatCurrency(totals.total)}</strong>
+              Total Income: <strong>{formatCurrency(totals.total)}</strong>
             </Typography>
           </Grid>
           <Grid item xs={12} sm={4}>
@@ -426,20 +462,20 @@ function KPOKnjiga() {
         <Table>
           <TableHead>
             <TableRow>
-              <TableCell>R.br. / No.</TableCell>
-              <TableCell>Broj fakture / Invoice No.</TableCell>
-              <TableCell>Datum / Date</TableCell>
-              <TableCell>Kupac / Customer</TableCell>
-              <TableCell>Opis / Description</TableCell>
-              <TableCell align="right">Iznos (RSD) / Amount</TableCell>
-              <TableCell>Status</TableCell>
+              <TableCell width="60">No.</TableCell>
+              <TableCell>Invoice No.</TableCell>
+              <TableCell>Date</TableCell>
+              <TableCell>Customer</TableCell>
+              <TableCell align="right">Amount (EUR/USD)</TableCell>
+              <TableCell align="right">Amount (RSD)</TableCell>
+              <TableCell align="right">Running Total</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {filteredInvoices.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} align="center">
-                  Nema faktura za prikazani period / No invoices for the selected period
+                  No invoices for the selected period
                 </TableCell>
               </TableRow>
             ) : (
@@ -455,24 +491,17 @@ function KPOKnjiga() {
                     <TableCell>{invoice.invoice_number}</TableCell>
                     <TableCell>{formatDate(invoice.invoice_date)}</TableCell>
                     <TableCell>{customerName}</TableCell>
-                    <TableCell>
-                      {invoice.items && invoice.items.length > 0 ? 
-                        invoice.items[0].description : 
-                        'Usluga / Service'
-                      }
-                      {invoice.items && invoice.items.length > 1 && 
-                        ` (+${invoice.items.length - 1} more)`
+                    <TableCell align="right">
+                      {invoice.currency !== 'RSD' ? 
+                        `${invoice.currency} ${invoice.total?.toFixed(2)}` : 
+                        '-'
                       }
                     </TableCell>
                     <TableCell align="right">
                       {formatCurrency(invoice.total_rsd || 0)}
                     </TableCell>
-                    <TableCell>
-                      <Chip
-                        label={getStatusLabel(invoice.status)}
-                        color={getStatusColor(invoice.status)}
-                        size="small"
-                      />
+                    <TableCell align="right">
+                      {formatCurrency(invoice.running_total || 0)}
                     </TableCell>
                   </TableRow>
                 );

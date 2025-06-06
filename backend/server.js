@@ -25,15 +25,20 @@ const invoiceRoutes = require('./routes/invoices');
 const settingsRoutes = require('./routes/settings');
 const exchangeRatesRoutes = require('./routes/exchangeRates');
 const nbsService = require('./services/nbsService');
+const { verifyToken, login, verifySession } = require('./middleware/auth');
 
-app.use('/api/customers', customerRoutes);
-app.use('/api/invoices', invoiceRoutes);
-app.use('/api/settings', settingsRoutes);
-app.use('/api/exchange-rates', exchangeRatesRoutes);
-
+// Public routes
+app.post('/api/auth/login', login);
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'Server is running' });
 });
+
+// Protected routes
+app.get('/api/auth/verify', verifyToken, verifySession);
+app.use('/api/customers', verifyToken, customerRoutes);
+app.use('/api/invoices', verifyToken, invoiceRoutes);
+app.use('/api/settings', verifyToken, settingsRoutes);
+app.use('/api/exchange-rates', verifyToken, exchangeRatesRoutes);
 
 // Initialize exchange rates on startup
 (async () => {

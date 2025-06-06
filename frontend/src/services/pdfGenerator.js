@@ -1,31 +1,16 @@
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
-import CryptoJS from 'crypto-js';
 
 class PDFInvoiceGenerator {
   constructor() {
-    this.pageWidth = 210; // A4 width in mm
-    this.pageHeight = 297; // A4 height in mm
+    this.doc = null;
+    this.y = 40; // Starting Y position
+    this.lineHeight = 6; // Height between lines
     this.margin = 20;
-    this.contentWidth = this.pageWidth - (this.margin * 2);
-  }
-
-  generateHash(invoiceData) {
-    // Create a hash from invoice data for identification
-    const hashData = {
-      number: invoiceData.invoice_number,
-      date: invoiceData.invoice_date,
-      customer: invoiceData.customer_name,
-      total: invoiceData.total_rsd,
-      items: invoiceData.items?.map(item => ({
-        desc: item.description,
-        qty: item.quantity,
-        price: item.price
-      }))
-    };
-    
-    const dataString = JSON.stringify(hashData);
-    return CryptoJS.SHA256(dataString).toString(CryptoJS.enc.Hex).substring(0, 16).toUpperCase();
+    this.pageWidth = 210; // A4 width
+    this.pageHeight = 297; // A4 height
+    this.leftCol = 20;
+    this.rightCol = 110;
   }
 
   formatCurrency(amount, currency = 'RSD') {
@@ -45,361 +30,228 @@ class PDFInvoiceGenerator {
     });
   }
 
-  addHeader(doc, companyData, invoiceData) {
-    // Invoice title - large and bold at top
-    doc.setFontSize(28);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(0, 0, 0);
-    doc.text('Invoice / Faktura:', this.margin, 30);
-    
-    // Invoice number - same line as title
-    doc.setFontSize(28);
-    doc.setFont('helvetica', 'bold');
-    doc.text(invoiceData.invoice_number || 'N/A', this.margin + 70, 30);
-    
-    // Date information - top right
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    const rightCol = this.pageWidth - this.margin - 80;
-    
-    doc.text('Invoice date / Datum', rightCol, 25);
-    doc.text('fakture', rightCol, 30);
-    doc.setFont('helvetica', 'bold');
-    doc.text(this.formatDate(invoiceData.invoice_date), rightCol, 35);
-    
-    doc.setFont('helvetica', 'normal');
-    doc.text('Trading date / Datum', rightCol + 45, 25);
-    doc.text('prometa', rightCol + 45, 30);
-    doc.setFont('helvetica', 'bold');
-    doc.text(this.formatDate(invoiceData.trading_date), rightCol + 45, 35);
-    
-    // Trading place
-    doc.setFont('helvetica', 'normal');
-    doc.text('Trading place / Mesto', rightCol + 45, 45);
-    doc.text('prometa', rightCol + 45, 50);
-    doc.setFont('helvetica', 'bold');
-    doc.text(companyData.city || 'Novi Sad', rightCol + 45, 55);
-    
-    // Horizontal line under header
-    doc.setLineWidth(0.5);
-    doc.setDrawColor(0, 0, 0);
-    doc.line(this.margin, 65, this.pageWidth - this.margin, 65);
-    
-    return 75; // Return Y position after header
+  addLine(text, x = this.leftCol, fontSize = 10, style = 'normal') {
+    this.doc.setFontSize(fontSize);
+    this.doc.setFont('helvetica', style);
+    this.doc.text(text, x, this.y);
+    this.y += this.lineHeight;
   }
 
-  addInvoiceInfo(doc, invoiceData, companyData, startY) {
-    const leftCol = this.margin;
-    const rightCol = this.pageWidth / 2 + 10;
-    
-    // From / Od section
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'normal');
-    doc.text('From / Od:', leftCol, startY);
-    
-    // Company name - larger and bold
-    doc.setFontSize(16);
-    doc.setFont('helvetica', 'bold');
-    doc.text(companyData.company_name || 'Digital Media Lab', leftCol, startY + 10);
-    
-    // Company details
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    let yPos = startY + 20;
-    const companyInfo = [
-      companyData.address || 'Branka Kozareva 11',
-      `${companyData.city || 'Kac'} ${companyData.postal_code || '21241'}`,
-      `VAT / EIB / PIB: ${companyData.pib || '112512167'}`,
-      `ID no / MB / Matični broj: ${companyData.mb || '66147142'}`,
-      `IBAN: ${companyData.iban || 'RS35265100000028025194'}`,
-      `SWIFT: ${companyData.swift || 'RZBSRSBG'}`,
-      `E-mail: ${companyData.email || 'vukasinilic01@gmail.com'}`,
-    ];
-    
-    companyInfo.forEach((info) => {
-      doc.text(info, leftCol, yPos);
-      yPos += 5;
-    });
-
-    // Bill to / Komitent section
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'normal');
-    doc.text('Bill to / Komitent:', rightCol, startY);
-    
-    // Customer name - larger and bold
-    doc.setFontSize(16);
-    doc.setFont('helvetica', 'bold');
-    doc.text(invoiceData.customer_name || 'Customer Name', rightCol, startY + 10);
-    
-    // Customer details
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    yPos = startY + 20;
-    const customerInfo = [
-      `Address / Adresa: ${invoiceData.customer_address || ''}`,
-      `City / Grad: ${invoiceData.customer_city || ''}`,
-      `Country / Država: ${invoiceData.customer_country || 'Serbia'}`,
-      invoiceData.customer_pib ? `VAT / EIB / PIB: ${invoiceData.customer_pib}` : '',
-    ].filter(Boolean);
-    
-    customerInfo.forEach((info) => {
-      doc.text(info, rightCol, yPos);
-      yPos += 5;
-    });
-
-    // Horizontal line after company info
-    const maxY = Math.max(startY + 20 + companyInfo.length * 5, startY + 20 + customerInfo.length * 5);
-    doc.setLineWidth(0.5);
-    doc.setDrawColor(0, 0, 0);
-    doc.line(this.margin, maxY + 10, this.pageWidth - this.margin, maxY + 10);
-
-    return maxY + 20; // Return Y position after info sections
+  addBlankLine(height = 10) {
+    this.y += height;
   }
 
-  addItemsTable(doc, invoiceData, startY) {
+  generate(invoiceData, companyData, customerData, bankAccounts, settings) {
+    this.doc = new jsPDF();
+    this.y = 40;
+
+    // Header
+    this.doc.setFontSize(20);
+    this.doc.setFont('helvetica', 'bold');
+    this.doc.text(`Invoice / Faktura: ${invoiceData.invoice_number}`, this.pageWidth / 2, 25, { align: 'center' });
+    
+    // Invoice dates
+    this.y = 40;
+    this.addLine(`Invoice Date / Datum fakture: ${this.formatDate(invoiceData.invoice_date)}`, this.leftCol, 10);
+    this.addLine(`Trading Date / Datum prometa: ${this.formatDate(invoiceData.trading_date)}`, this.leftCol, 10);
+    this.addBlankLine();
+
+    // Two columns: From and Bill To
+    const startY = this.y;
+    
+    // Left column - From
+    this.addLine('FROM / OD:', this.leftCol, 12, 'bold');
+    this.addLine(companyData.company_name || '', this.leftCol, 11, 'bold');
+    this.addLine(companyData.address || '', this.leftCol);
+    this.addLine(`${companyData.postal_code || ''} ${companyData.city || ''}`, this.leftCol);
+    if (companyData.pib) this.addLine(`PIB: ${companyData.pib}`, this.leftCol);
+    if (companyData.mb) this.addLine(`MB: ${companyData.mb}`, this.leftCol);
+    if (companyData.phone) this.addLine(`Tel: ${companyData.phone}`, this.leftCol);
+    if (companyData.email) this.addLine(`Email: ${companyData.email}`, this.leftCol);
+    
+    // Right column - Bill To
+    this.y = startY;
+    this.addLine('BILL TO / KUPAC:', this.rightCol, 12, 'bold');
+    this.addLine(customerData.name || '', this.rightCol, 11, 'bold');
+    this.addLine(customerData.address || '', this.rightCol);
+    this.addLine(`${customerData.postal_code || ''} ${customerData.city || ''}`, this.rightCol);
+    this.addLine(`${customerData.country || 'Serbia'}`, this.rightCol);
+    if (customerData.pib) this.addLine(`PIB: ${customerData.pib}`, this.rightCol);
+    if (customerData.mb) this.addLine(`MB: ${customerData.mb}`, this.rightCol);
+    if (customerData.contact_person) this.addLine(`Contact: ${customerData.contact_person}`, this.rightCol);
+    if (customerData.email) this.addLine(`Email: ${customerData.email}`, this.rightCol);
+
+    // Move to after both columns
+    this.y = Math.max(this.y, startY + 60);
+    this.addBlankLine();
+
+    // Items table
     const items = invoiceData.items || [];
-    
-    // Prepare table data exactly like the template
-    const tableHeaders = [
-      'TYPE OF SERVICE\n(VRSTA USLUGE)',
-      'UNIT\n(JEDINICA)',
-      'QUANTITY\n(KOLICINA)',
-      'PRICE\n(CENA)',
-      'DISCOUNT\n(RABAT)',
-      'TOTAL\n(UKUPNO)'
-    ];
-    
-    const tableData = items.map((item) => {
-      const itemTotal = item.quantity * item.price * (1 - (item.discount || 0) / 100);
+    const tableData = items.map((item, index) => {
+      const total = item.quantity * item.price * (1 - (item.discount || 0) / 100);
       return [
-        item.description,
-        `${item.unit || 'Piece'} /\n${item.unit || 'Komad'}`,
-        item.quantity.toFixed(2),
-        item.price.toFixed(2),
-        (item.discount || 0).toFixed(2),
-        itemTotal.toFixed(2)
+        index + 1,
+        item.description || '',
+        item.unit || 'kom',
+        item.quantity || 0,
+        this.formatCurrency(item.price, invoiceData.currency),
+        item.discount ? `${item.discount}%` : '0%',
+        this.formatCurrency(total, invoiceData.currency)
       ];
     });
 
-    // Calculate totals
-    const subtotal = items.reduce((sum, item) => sum + (item.quantity * item.price), 0);
-    const discountTotal = items.reduce((sum, item) => {
-      const itemSubtotal = item.quantity * item.price;
-      return sum + (itemSubtotal * (item.discount || 0) / 100);
-    }, 0);
-    const total = subtotal - discountTotal;
-
-    // Add table with clean styling like the template
-    doc.autoTable({
-      head: [tableHeaders],
+    // Add table with borders
+    this.doc.autoTable({
+      startY: this.y,
+      head: [['#', 'Description / Opis', 'Unit', 'Qty', 'Price', 'Discount', 'Total']],
       body: tableData,
-      startY: startY,
       theme: 'grid',
       styles: {
         fontSize: 10,
-        cellPadding: 8,
-        lineColor: [0, 0, 0],
-        lineWidth: 0.5,
+        cellPadding: 3,
       },
       headStyles: {
-        fillColor: [255, 255, 255],
-        textColor: [0, 0, 0],
+        fillColor: [107, 70, 193], // Purple color
+        textColor: 255,
         fontStyle: 'bold',
-        fontSize: 9,
-        halign: 'center',
-        valign: 'middle',
       },
       columnStyles: {
-        0: { halign: 'left', cellWidth: 60 },     // Service description
-        1: { halign: 'center', cellWidth: 25 },   // Unit
-        2: { halign: 'center', cellWidth: 25 },   // Quantity  
-        3: { halign: 'right', cellWidth: 25 },    // Price
-        4: { halign: 'center', cellWidth: 25 },   // Discount
-        5: { halign: 'right', cellWidth: 25 }     // Total
+        0: { halign: 'center', cellWidth: 10 },
+        1: { cellWidth: 70 },
+        2: { halign: 'center', cellWidth: 20 },
+        3: { halign: 'right', cellWidth: 15 },
+        4: { halign: 'right', cellWidth: 25 },
+        5: { halign: 'center', cellWidth: 20 },
+        6: { halign: 'right', cellWidth: 30 },
       },
-      bodyStyles: {
-        valign: 'middle',
-      }
     });
 
-    const finalY = doc.lastAutoTable.finalY + 15;
+    // Get Y position after table
+    this.y = this.doc.lastAutoTable.finalY + 10;
 
-    // Add totals exactly like the template
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'bold');
+    // Totals
+    const totalsX = 130;
+    this.addLine(`Subtotal: ${this.formatCurrency(invoiceData.subtotal || 0, invoiceData.currency)}`, totalsX, 10);
+    if (invoiceData.discount_total > 0) {
+      this.addLine(`Discount: -${this.formatCurrency(invoiceData.discount_total || 0, invoiceData.currency)}`, totalsX, 10);
+    }
+    this.addLine(`Total ${invoiceData.currency}: ${this.formatCurrency(invoiceData.total || 0, invoiceData.currency)}`, totalsX, 12, 'bold');
     
-    // Total line
-    doc.text(`TOTAL / UKUPNO (${invoiceData.currency})`, this.margin, finalY);
-    doc.text(total.toFixed(2), this.pageWidth - this.margin, finalY, { align: 'right' });
-    
-    // Discount line
-    doc.text(`DISCOUNT / RABAT (${invoiceData.currency})`, this.margin, finalY + 15);
-    doc.text(discountTotal.toFixed(2), this.pageWidth - this.margin, finalY + 15, { align: 'right' });
-    
-    // Final total line with border
-    doc.setLineWidth(1);
-    doc.line(this.margin, finalY + 25, this.pageWidth - this.margin, finalY + 25);
-    
-    doc.setFontSize(14);
-    doc.text(`TOTAL FOR PAYMENT / UKUPNO ZA UPLATU (${invoiceData.currency})`, this.margin, finalY + 35);
-    doc.text(total.toFixed(2), this.pageWidth - this.margin, finalY + 35, { align: 'right' });
-    
-    doc.line(this.margin, finalY + 40, this.pageWidth - this.margin, finalY + 40);
+    if (invoiceData.currency !== 'RSD' && invoiceData.exchange_rate) {
+      this.addLine(`Exchange Rate / Kurs: ${invoiceData.exchange_rate}`, totalsX, 10);
+      this.addLine(`Total RSD: ${this.formatCurrency(invoiceData.total_rsd || 0, 'RSD')}`, totalsX, 12, 'bold');
+    }
 
-    return finalY + 50;
-  }
+    this.addBlankLine(15);
 
-  addPaymentInfo(doc, invoiceData, startY) {
-    if (!invoiceData.bank_account) return startY;
+    // Payment information
+    this.addLine('PAYMENT INFORMATION / INFORMACIJE ZA PLAĆANJE:', this.leftCol, 12, 'bold');
     
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
-    doc.text('PODACI ZA PLAĆANJE / PAYMENT DETAILS:', this.margin, startY);
-    
-    doc.setFont('helvetica', 'normal');
-    const paymentInfo = [
-      `Račun / Account: ${invoiceData.bank_account.iban || 'N/A'}`,
-      `Banka / Bank: ${invoiceData.bank_account.bank_name || 'N/A'}`,
-      invoiceData.bank_account.swift ? `SWIFT: ${invoiceData.bank_account.swift}` : '',
-    ].filter(Boolean);
-    
-    paymentInfo.forEach((info, index) => {
-      doc.text(info, this.margin, startY + 10 + (index * 5));
-    });
+    // Bank account
+    const bankAccount = bankAccounts?.find(acc => acc.id === invoiceData.bank_account_id) || bankAccounts?.[0];
+    if (bankAccount) {
+      this.addLine(`Bank / Banka: ${bankAccount.bank_name}`, this.leftCol);
+      this.addLine(`Account / Račun: ${bankAccount.account_number}`, this.leftCol);
+      if (bankAccount.swift) this.addLine(`SWIFT: ${bankAccount.swift}`, this.leftCol);
+      if (bankAccount.iban) this.addLine(`IBAN: ${bankAccount.iban}`, this.leftCol);
+    }
 
-    return startY + 30;
-  }
-
-  addNotes(doc, invoiceData, startY) {
-    // Comment / Opis usluge section
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'bold');
-    doc.text('COMMENT / OPIS USLUGE', this.margin, startY);
-    
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    let yPos = startY + 8;
-    
     // Payment deadline
-    doc.text(`Payment deadline is ${invoiceData.payment_deadline || 15} days`, this.margin, yPos);
-    yPos += 5;
-    
-    // Payment reference
-    doc.text(`When making the payment, please provide the reference number / Pri plaćanju fakture`, this.margin, yPos);
-    yPos += 5;
-    doc.text(`navedite poziv na broj ${invoiceData.invoice_number}`, this.margin, yPos);
-    yPos += 8;
+    const paymentDeadline = new Date(invoiceData.invoice_date);
+    paymentDeadline.setDate(paymentDeadline.getDate() + (invoiceData.payment_deadline || 30));
+    this.addLine(`Payment Due / Rok plaćanja: ${this.formatDate(paymentDeadline)}`, this.leftCol);
+
+    // Reference number
+    if (settings?.invoice_reference_model && settings?.invoice_reference_number) {
+      this.addLine(`Reference / Poziv na broj: ${settings.invoice_reference_model}-${settings.invoice_reference_number}`, this.leftCol);
+    }
+
+    // Notes
+    if (invoiceData.notes) {
+      this.addBlankLine();
+      this.addLine('NOTES / NAPOMENE:', this.leftCol, 12, 'bold');
+      const lines = invoiceData.notes.split('\n');
+      lines.forEach(line => {
+        if (line.trim()) this.addLine(line, this.leftCol);
+      });
+    }
+
+    // Footer
+    this.y = this.pageHeight - 40;
+    this.doc.setLineWidth(0.5);
+    this.doc.line(this.margin, this.y - 5, this.pageWidth - this.margin, this.y - 5);
     
     // Identification number
-    doc.text('Identification number / Identifikacioni broj:', this.margin, yPos);
-    yPos += 5;
-    const hash = this.generateHash(invoiceData);
-    doc.setFont('helvetica', 'bold');
-    doc.text(hash, this.margin, yPos);
-    doc.setFont('helvetica', 'normal');
-    yPos += 8;
-    
-    // Document validity
-    doc.text('Document is valid without stamp and signature / Faktura je važeća bez pečata i potpisa', this.margin, yPos);
-    yPos += 5;
-    doc.text(`Place of issue / Mesto izdavanja: ${invoiceData.city || 'Kac 21241'}`, this.margin, yPos);
-    yPos += 10;
-    
-    // Tax exemption note
-    doc.setFont('helvetica', 'bold');
-    doc.text('NOTE ON TAX EXEMPTION / NAPOMENA O PORESKOM OSLOBOĐENJU:', this.margin, yPos);
-    yPos += 5;
-    doc.setFont('helvetica', 'normal');
-    doc.text('Not in the VAT system. / Poreski obveznik nije u sistemu PDV-a.', this.margin, yPos);
-    yPos += 5;
-    doc.text('VAT not calculated on the invoice according to article 33 of Law on value added tax. / PDV', this.margin, yPos);
-    yPos += 5;
-    doc.text('nije obračunat na fakturi u skladu sa članom 33. Zakona o porezu na dodatu vrednost.', this.margin, yPos);
-    
-    return yPos + 15;
+    const idNumber = this.generateIdNumber(invoiceData);
+    this.doc.setFontSize(8);
+    this.doc.setFont('helvetica', 'normal');
+    this.doc.text(`ID: ${idNumber}`, this.pageWidth / 2, this.y, { align: 'center' });
+
+    return this.doc;
   }
 
-  addFooter(doc, invoiceData) {
-    const footerY = this.pageHeight - 25;
-    
-    // Page number and generation info
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'normal');
-    doc.text('Page 1 from 1', this.margin, footerY);
-    
-    // Generated by notice - center
-    doc.text('Invoice made by pausal.rs', this.pageWidth / 2, footerY, { align: 'center' });
-    
-    // PAUSAL logo/text - right aligned
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
-    doc.text('PAUSAL', this.pageWidth - this.margin, footerY, { align: 'right' });
+  generateIdNumber(invoice) {
+    // Simple ID based on invoice number and date
+    const dateStr = new Date(invoice.invoice_date).toISOString().split('T')[0].replace(/-/g, '');
+    return `${invoice.invoice_number.replace(/\//g, '-')}-${dateStr}`;
   }
 
-  async generatePDF(invoiceData, companyData = {}) {
+  download(invoiceData, companyData, customerData, bankAccounts, settings) {
+    const doc = this.generate(invoiceData, companyData, customerData, bankAccounts, settings);
+    const filename = `Invoice_${invoiceData.invoice_number.replace(/\//g, '_')}_${customerData.name}.pdf`;
+    doc.save(filename);
+  }
+
+  getBlob(invoiceData, companyData, customerData, bankAccounts, settings) {
+    const doc = this.generate(invoiceData, companyData, customerData, bankAccounts, settings);
+    return doc.output('blob');
+  }
+
+  // Compatibility method for existing code
+  async downloadInvoice(invoiceData, companyData) {
     try {
-      console.log('Creating jsPDF instance...');
-      const doc = new jsPDF('p', 'mm', 'a4');
-      console.log('jsPDF created successfully');
-      
-      // Set document metadata
-      doc.setProperties({
-        title: `Faktura ${invoiceData.invoice_number}`,
-        subject: `Invoice ${invoiceData.invoice_number}`,
-        author: companyData.company_name || 'Pausal Invoice App',
-        creator: 'Pausal Invoice App'
+      console.log('PDF Generator - Starting download with data:', {
+        invoiceData: invoiceData,
+        companyData: companyData
       });
 
-      let currentY = 20;
+      // Convert old format to new format
+      const customerData = {
+        name: invoiceData.customer_name || 'Unknown Customer',
+        company: invoiceData.customer_company || '',
+        address: invoiceData.customer_address || '',
+        city: invoiceData.customer_city || '',
+        country: invoiceData.customer_country || 'Serbia',
+        pib: invoiceData.customer_pib || '',
+        mb: invoiceData.customer_mb || '',
+        email: invoiceData.customer_email || ''
+      };
 
-      // Add sections
-      currentY = this.addHeader(doc, companyData, invoiceData);
-      currentY = this.addInvoiceInfo(doc, invoiceData, companyData, currentY);
-      currentY = this.addItemsTable(doc, invoiceData, currentY);
-      currentY = this.addPaymentInfo(doc, invoiceData, currentY);
-      currentY = this.addNotes(doc, invoiceData, currentY);
-      
-      // Add footer
-      this.addFooter(doc, invoiceData);
+      console.log('PDF Generator - Customer data:', customerData);
+      console.log('PDF Generator - Invoice items:', invoiceData.items);
 
-      return doc;
+      // Ensure items exist
+      if (!invoiceData.items || !Array.isArray(invoiceData.items)) {
+        invoiceData.items = [
+          {
+            description: 'Service',
+            unit: 'kom',
+            quantity: 1,
+            price: invoiceData.total || 0,
+            discount: 0
+          }
+        ];
+      }
+
+      // Generate and download
+      this.download(invoiceData, companyData, customerData, [], {});
+      console.log('PDF Generator - Download completed successfully');
+      return true;
     } catch (error) {
-      console.error('Error generating PDF:', error);
-      throw new Error('Failed to generate PDF invoice');
-    }
-  }
-
-  async downloadInvoice(invoiceData, companyData = {}) {
-    try {
-      console.log('Generating PDF with data:', { invoiceData, companyData });
-      const doc = await this.generatePDF(invoiceData, companyData);
-      const filename = `Faktura_${invoiceData.invoice_number.replace('/', '_')}.pdf`;
-      console.log('Saving PDF with filename:', filename);
-      doc.save(filename);
-      console.log('PDF saved successfully');
-      return filename;
-    } catch (error) {
-      console.error('Error downloading invoice:', error);
-      throw error;
-    }
-  }
-
-  async previewInvoice(invoiceData, companyData = {}) {
-    try {
-      const doc = await this.generatePDF(invoiceData, companyData);
-      const pdfBlob = doc.output('blob');
-      const pdfUrl = URL.createObjectURL(pdfBlob);
-      
-      // Open in new window for preview
-      window.open(pdfUrl, '_blank');
-      
-      return pdfUrl;
-    } catch (error) {
-      console.error('Error previewing invoice:', error);
+      console.error('PDF generation error:', error);
       throw error;
     }
   }
 }
 
-const pdfGenerator = new PDFInvoiceGenerator();
-export default pdfGenerator;
+export default new PDFInvoiceGenerator();

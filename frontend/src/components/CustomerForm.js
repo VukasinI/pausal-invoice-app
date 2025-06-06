@@ -79,27 +79,27 @@ function CustomerForm({ open, onClose, onSubmit, customer }) {
     const newErrors = {};
     
     if (!formData.name.trim()) {
-      newErrors.name = 'Name is required / Ime je obavezno';
+      newErrors.name = 'Name is required';
     }
     
     if (!formData.address.trim()) {
-      newErrors.address = 'Address is required / Adresa je obavezna';
+      newErrors.address = 'Address is required';
     }
     
     if (!formData.city.trim()) {
-      newErrors.city = 'City is required / Grad je obavezan';
+      newErrors.city = 'City is required';
     }
     
     if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      newErrors.email = 'Invalid email format / Neispravan format emaila';
+      newErrors.email = 'Invalid email format';
     }
     
     if (formData.pib && !/^\d{9}$/.test(formData.pib)) {
-      newErrors.pib = 'PIB must be 9 digits / PIB mora imati 9 cifara';
+      newErrors.pib = 'PIB must be 9 digits';
     }
     
     if (formData.mb && !/^\d{8}$/.test(formData.mb)) {
-      newErrors.mb = 'MB must be 8 digits / MB mora imati 8 cifara';
+      newErrors.mb = 'MB must be 8 digits';
     }
     
     setErrors(newErrors);
@@ -137,7 +137,7 @@ function CustomerForm({ open, onClose, onSubmit, customer }) {
           <Box display="flex" alignItems="center" justifyContent="center" gap={1}>
             <PersonIcon />
             <Typography variant="h5" component="div">
-              {customer ? 'Edit Customer / Izmeni kupca' : 'Add Customer / Dodaj kupca'}
+              {customer ? 'Edit Customer' : 'Add Customer'}
             </Typography>
           </Box>
         </DialogTitle>

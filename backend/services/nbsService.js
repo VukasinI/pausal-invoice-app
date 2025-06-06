@@ -3,8 +3,7 @@ const db = require('../db/database');
 
 class NBSService {
   constructor() {
-    this.baseURL = 'https://www.nbs.rs/kursnaListaModul/naZeljeniDan.faces';
-    this.apiURL = 'https://api.nbs.rs/ExchangeRate/list';
+    this.apiURL = 'https://api.nbs.rs/exchange-rate/v1/rate/daily/';
   }
 
   async fetchExchangeRates(date = null) {
@@ -14,22 +13,29 @@ class NBSService {
       
       console.log(`Fetching NBS exchange rates for date: ${targetDate}`);
       
-      // NBS API endpoint
-      const response = await axios.get(this.apiURL, {
-        params: {
-          index: 'exchange-rate-lists',
-          fromDate: targetDate,
-          toDate: targetDate,
-          format: 'json'
-        },
-        timeout: 10000
+      // First, check if we have cached rates for this date
+      const cachedRates = await this.getCachedRatesForDate(targetDate);
+      if (cachedRates.length > 0) {
+        console.log(`Using cached rates for ${targetDate}`);
+        return cachedRates;
+      }
+      
+      // NBS API endpoint with date parameter
+      const url = `${this.apiURL}?date=${targetDate}`;
+      const response = await axios.get(url, {
+        timeout: 10000,
+        headers: {
+          'Accept': 'application/json'
+        }
       });
 
-      if (response.data && response.data.length > 0) {
-        const rateList = response.data[0];
-        return this.parseNBSResponse(rateList, targetDate);
-      } else {
-        // Fallback: try previous business day
+      if (response.data && response.data.exchangeRateListModels && response.data.exchangeRateListModels.length > 0) {
+        const rates = this.parseNBSResponse(response.data, targetDate);
+        // Cache the rates
+        await this.saveRatesToDB(rates);
+        return rates;
+      } else if (response.data && response.data.message) {
+        // No rates for this date (weekend/holiday), try previous business day
         const previousDay = new Date(targetDate);
         previousDay.setDate(previousDay.getDate() - 1);
         const prevDateStr = previousDay.toISOString().split('T')[0];
@@ -45,23 +51,38 @@ class NBSService {
     }
   }
 
-  parseNBSResponse(rateList, date) {
+  async getCachedRatesForDate(date) {
+    try {
+      const rates = db.prepare(`
+        SELECT * FROM exchange_rates 
+        WHERE rate_date = ?
+        ORDER BY currency_code
+      `).all(date);
+      
+      return rates;
+    } catch (error) {
+      console.error('Error getting cached rates:', error);
+      return [];
+    }
+  }
+
+  parseNBSResponse(response, date) {
     const rates = [];
     
-    if (rateList.ExchangeRates) {
-      rateList.ExchangeRates.forEach(rate => {
+    if (response.exchangeRateListModels && response.exchangeRateListModels.length > 0) {
+      response.exchangeRateListModels.forEach(rate => {
         // Common currencies we're interested in
-        const supportedCurrencies = ['EUR', 'USD', 'GBP', 'CHF', 'JPY'];
+        const supportedCurrencies = ['EUR', 'USD', 'GBP', 'CHF', 'JPY', 'AUD', 'CAD', 'SEK', 'NOK', 'DKK'];
         
-        if (supportedCurrencies.includes(rate.CharCode)) {
+        if (supportedCurrencies.includes(rate.currencyCode)) {
           rates.push({
-            currency_code: rate.CharCode,
-            currency_name: rate.Currency || rate.CharCode,
-            buy_rate: this.parseRate(rate.BuyingRate),
-            middle_rate: this.parseRate(rate.MiddleRate),
-            sell_rate: this.parseRate(rate.SellingRate),
+            currency_code: rate.currencyCode,
+            currency_name: rate.currencyNameSerCyrillic || rate.currencyNameSerLatin || rate.currencyNameEng || rate.currencyCode,
+            buy_rate: this.parseRate(rate.buyingRate),
+            middle_rate: this.parseRate(rate.middleRate),
+            sell_rate: this.parseRate(rate.sellingRate),
             rate_date: date,
-            unit: parseInt(rate.Unit) || 1
+            unit: parseInt(rate.unit) || 1
           });
         }
       });
@@ -174,36 +195,50 @@ class NBSService {
   async getRateForCurrency(currencyCode, date = null) {
     try {
       if (currencyCode === 'RSD') {
-        return { middle_rate: 1, unit: 1 };
+        return { 
+          middle_rate: 1, 
+          unit: 1,
+          rate_date: date || new Date().toISOString().split('T')[0],
+          currency_code: 'RSD'
+        };
       }
 
+      const targetDate = date || new Date().toISOString().split('T')[0];
+
+      // First check cache
       let query = `
         SELECT * FROM exchange_rates 
-        WHERE currency_code = ?
+        WHERE currency_code = ? AND rate_date = ?
       `;
-      let params = [currencyCode];
+      
+      let rate = db.prepare(query).get(currencyCode, targetDate);
 
-      if (date) {
-        query += ` AND rate_date <= ? ORDER BY rate_date DESC LIMIT 1`;
-        params.push(date);
-      } else {
-        query += ` ORDER BY rate_date DESC LIMIT 1`;
+      if (!rate && date) {
+        // If specific date requested but not found, fetch from API
+        console.log(`Rate not cached for ${currencyCode} on ${targetDate}, fetching from API...`);
+        const fetchedRates = await this.fetchExchangeRates(targetDate);
+        rate = fetchedRates.find(r => r.currency_code === currencyCode);
       }
 
-      const rate = db.prepare(query).get(...params);
+      if (!rate) {
+        // Try to get the most recent rate
+        query = `
+          SELECT * FROM exchange_rates 
+          WHERE currency_code = ?
+          ORDER BY rate_date DESC LIMIT 1
+        `;
+        rate = db.prepare(query).get(currencyCode);
+      }
 
       if (!rate) {
-        // No rate found, fetch latest from NBS
-        const latestRates = await this.getLatestRates();
-        const foundRate = latestRates.find(r => r.currency_code === currencyCode);
-        
-        if (foundRate) {
-          return foundRate;
-        }
-
-        // Fallback
+        // No rate found anywhere, use fallback
         const fallbackRates = this.getFallbackRates();
-        return fallbackRates.find(r => r.currency_code === currencyCode) || { middle_rate: 1, unit: 1 };
+        return fallbackRates.find(r => r.currency_code === currencyCode) || { 
+          middle_rate: 1, 
+          unit: 1,
+          rate_date: targetDate,
+          currency_code: currencyCode
+        };
       }
 
       return rate;

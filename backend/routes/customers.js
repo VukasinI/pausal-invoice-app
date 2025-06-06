@@ -115,10 +115,25 @@ router.put('/:id', (req, res) => {
 
 router.delete('/:id', (req, res) => {
   try {
-    const result = db.prepare('DELETE FROM customers WHERE id = ?').run(req.params.id);
-    if (result.changes === 0) {
+    const customerId = req.params.id;
+    
+    // Check if customer exists
+    const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(customerId);
+    if (!customer) {
       return res.status(404).json({ error: 'Customer not found' });
     }
+    
+    // Check if customer has any invoices
+    const invoiceCount = db.prepare('SELECT COUNT(*) as count FROM invoices WHERE customer_id = ?').get(customerId);
+    if (invoiceCount.count > 0) {
+      return res.status(400).json({ 
+        error: 'Cannot delete customer with existing invoices', 
+        invoiceCount: invoiceCount.count 
+      });
+    }
+    
+    // Delete customer
+    const result = db.prepare('DELETE FROM customers WHERE id = ?').run(customerId);
     res.status(204).send();
   } catch (error) {
     res.status(500).json({ error: error.message });

@@ -17,12 +17,18 @@ import {
   Alert,
   Snackbar,
   InputAdornment,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
 } from '@mui/material';
 import {
   Add as AddIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
   Search as SearchIcon,
+  Warning as WarningIcon,
 } from '@mui/icons-material';
 import { customerService } from '../services/api';
 import CustomerForm from '../components/CustomerForm';
@@ -36,6 +42,7 @@ function Customers() {
   const [openForm, setOpenForm] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  const [deleteDialog, setDeleteDialog] = useState({ open: false, customer: null });
 
   useEffect(() => {
     fetchCustomers();
@@ -52,7 +59,7 @@ function Customers() {
       setCustomers(response.data);
       setError(null);
     } catch (err) {
-      setError('Failed to load customers / Greška pri učitavanju kupaca');
+      setError('Failed to load customers');
     } finally {
       setLoading(false);
     }
@@ -83,16 +90,31 @@ function Customers() {
     setOpenForm(true);
   };
 
-  const handleDelete = async (id) => {
-    if (window.confirm('Are you sure you want to delete this customer? / Da li ste sigurni da želite da obrišete ovog kupca?')) {
-      try {
-        await customerService.delete(id);
-        fetchCustomers();
-        showSnackbar('Customer deleted successfully / Kupac uspešno obrisan', 'success');
-      } catch (err) {
-        showSnackbar('Failed to delete customer / Greška pri brisanju kupca', 'error');
+  const handleDeleteClick = (customer) => {
+    setDeleteDialog({ open: true, customer });
+  };
+
+  const handleDeleteConfirm = async () => {
+    const customer = deleteDialog.customer;
+    if (!customer) return;
+
+    try {
+      await customerService.delete(customer.id);
+      fetchCustomers();
+      showSnackbar('Customer deleted successfully', 'success');
+    } catch (err) {
+      if (err.response?.data?.invoiceCount) {
+        showSnackbar(`Cannot delete customer with ${err.response.data.invoiceCount} existing invoice(s)`, 'error');
+      } else {
+        showSnackbar(err.response?.data?.error || 'Failed to delete customer', 'error');
       }
+    } finally {
+      setDeleteDialog({ open: false, customer: null });
     }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteDialog({ open: false, customer: null });
   };
 
   const handleFormClose = () => {
@@ -104,15 +126,15 @@ function Customers() {
     try {
       if (selectedCustomer) {
         await customerService.update(selectedCustomer.id, data);
-        showSnackbar('Customer updated successfully / Kupac uspešno ažuriran', 'success');
+        showSnackbar('Customer updated successfully', 'success');
       } else {
         await customerService.create(data);
-        showSnackbar('Customer created successfully / Kupac uspešno kreiran', 'success');
+        showSnackbar('Customer created successfully', 'success');
       }
       fetchCustomers();
       handleFormClose();
     } catch (err) {
-      showSnackbar('Failed to save customer / Greška pri čuvanju kupca', 'error');
+      showSnackbar('Failed to save customer', 'error');
     }
   };
 
@@ -138,14 +160,14 @@ function Customers() {
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
       <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Typography variant="h4" component="h1">
-          Customers / Kupci
+          Customers
         </Typography>
         <Button
           variant="contained"
           startIcon={<AddIcon />}
           onClick={handleAdd}
         >
-          Add Customer / Dodaj kupca
+          Add Customer
         </Button>
       </Box>
 
@@ -159,7 +181,7 @@ function Customers() {
         <TextField
           fullWidth
           variant="outlined"
-          placeholder="Search customers... / Pretraži kupce..."
+          placeholder="Search customers..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           InputProps={{
@@ -176,20 +198,20 @@ function Customers() {
         <Table>
           <TableHead>
             <TableRow>
-              <TableCell>Name / Ime</TableCell>
-              <TableCell>Company / Firma</TableCell>
+              <TableCell>Name</TableCell>
+              <TableCell>Company</TableCell>
               <TableCell>PIB</TableCell>
               <TableCell>MB</TableCell>
-              <TableCell>City / Grad</TableCell>
+              <TableCell>City</TableCell>
               <TableCell>Email</TableCell>
-              <TableCell align="right">Actions / Akcije</TableCell>
+              <TableCell align="right">Actions</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {filteredCustomers.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} align="center">
-                  No customers found / Nema pronađenih kupaca
+                  {searchTerm ? 'No customers found' : 'No customers yet. Add your first customer!'}
                 </TableCell>
               </TableRow>
             ) : (
@@ -205,14 +227,15 @@ function Customers() {
                     <IconButton
                       size="small"
                       onClick={() => handleEdit(customer)}
-                      title="Edit / Izmeni"
+                      title="Edit"
                     >
                       <EditIcon />
                     </IconButton>
                     <IconButton
+                      color="error"
                       size="small"
-                      onClick={() => handleDelete(customer.id)}
-                      title="Delete / Obriši"
+                      onClick={() => handleDeleteClick(customer)}
+                      title="Delete"
                     >
                       <DeleteIcon />
                     </IconButton>
@@ -230,6 +253,32 @@ function Customers() {
         onSubmit={handleFormSubmit}
         customer={selectedCustomer}
       />
+
+      <Dialog
+        open={deleteDialog.open}
+        onClose={handleDeleteCancel}
+        aria-labelledby="delete-dialog-title"
+        aria-describedby="delete-dialog-description"
+      >
+        <DialogTitle id="delete-dialog-title" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <WarningIcon color="warning" />
+          Confirm Deletion
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText id="delete-dialog-description">
+            Are you sure you want to delete customer "{deleteDialog.customer?.name}"?
+            {deleteDialog.customer?.company && ` (${deleteDialog.customer.company})`}
+            <br /><br />
+            This action cannot be undone. The customer can only be deleted if they have no existing invoices.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleDeleteCancel}>Cancel</Button>
+          <Button onClick={handleDeleteConfirm} color="error" variant="contained">
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Snackbar
         open={snackbar.open}

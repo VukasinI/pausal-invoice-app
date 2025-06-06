@@ -56,7 +56,7 @@ function Invoices() {
       setCustomers(customersResponse.data);
       setError(null);
     } catch (err) {
-      setError('Failed to load data / Greška pri učitavanju podataka');
+      setError('Failed to load data');
     } finally {
       setLoading(false);
     }
@@ -73,18 +73,18 @@ function Invoices() {
       setSelectedInvoice(response.data);
       setOpenForm(true);
     } catch (err) {
-      showSnackbar('Failed to load invoice / Greška pri učitavanju fakture', 'error');
+      showSnackbar('Failed to load invoice', 'error');
     }
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm('Are you sure you want to delete this invoice? / Da li ste sigurni da želite da obrišete ovu fakturu?')) {
+    if (window.confirm('Are you sure you want to delete this invoice?')) {
       try {
         await invoiceService.delete(id);
         fetchData();
-        showSnackbar('Invoice deleted successfully / Faktura uspešno obrisana', 'success');
+        showSnackbar('Invoice deleted successfully', 'success');
       } catch (err) {
-        showSnackbar('Failed to delete invoice / Greška pri brisanju fakture', 'error');
+        showSnackbar('Failed to delete invoice', 'error');
       }
     }
   };
@@ -98,15 +98,15 @@ function Invoices() {
     try {
       if (selectedInvoice) {
         await invoiceService.update(selectedInvoice.id, data);
-        showSnackbar('Invoice updated successfully / Faktura uspešno ažurirana', 'success');
+        showSnackbar('Invoice updated successfully', 'success');
       } else {
         await invoiceService.create(data);
-        showSnackbar('Invoice created successfully / Faktura uspešno kreirana', 'success');
+        showSnackbar('Invoice created successfully', 'success');
       }
       fetchData();
       handleFormClose();
     } catch (err) {
-      showSnackbar('Failed to save invoice / Greška pri čuvanju fakture', 'error');
+      showSnackbar('Failed to save invoice', 'error');
     }
   };
 
@@ -144,10 +144,10 @@ function Invoices() {
 
   const getStatusLabel = (status) => {
     const labels = {
-      draft: 'Draft / Nacrt',
-      sent: 'Sent / Poslato',
-      paid: 'Paid / Plaćeno',
-      overdue: 'Overdue / Kasni',
+      draft: 'Draft',
+      sent: 'Sent',
+      paid: 'Paid',
+      overdue: 'Overdue',
     };
     return labels[status] || status;
   };
@@ -156,12 +156,7 @@ function Invoices() {
     try {
       setPdfLoading(prev => ({ ...prev, [invoice.id]: true }));
       
-      // Test simple PDF first
-      console.log('Testing basic PDF functionality...');
-      const testResult = testPDF();
-      if (!testResult) {
-        throw new Error('Basic PDF test failed');
-      }
+      console.log('Starting PDF generation for invoice:', invoice.id);
       
       // Get full invoice data with items
       const [invoiceResponse, settingsResponse] = await Promise.all([
@@ -172,22 +167,28 @@ function Invoices() {
       const fullInvoiceData = invoiceResponse.data;
       const companyData = settingsResponse.data;
       
+      console.log('Full invoice data:', fullInvoiceData);
+      console.log('Company data:', companyData);
+      
       // Find customer data
       const customer = customers.find(c => c.id === fullInvoiceData.customer_id);
-      if (customer) {
-        fullInvoiceData.customer_name = customer.name;
-        fullInvoiceData.customer_company = customer.company;
-        fullInvoiceData.customer_address = customer.address;
-        fullInvoiceData.customer_city = customer.city;
-        fullInvoiceData.customer_country = customer.country;
-        fullInvoiceData.customer_pib = customer.pib;
-        fullInvoiceData.customer_mb = customer.mb;
-        fullInvoiceData.customer_email = customer.email;
+      if (!customer) {
+        throw new Error('Customer not found');
       }
+      
+      // Add customer data to invoice
+      fullInvoiceData.customer_name = customer.name;
+      fullInvoiceData.customer_company = customer.company;
+      fullInvoiceData.customer_address = customer.address;
+      fullInvoiceData.customer_city = customer.city;
+      fullInvoiceData.customer_country = customer.country;
+      fullInvoiceData.customer_pib = customer.pib;
+      fullInvoiceData.customer_mb = customer.mb;
+      fullInvoiceData.customer_email = customer.email;
       
       console.log('Calling pdfGenerator.downloadInvoice...');
       await pdfGenerator.downloadInvoice(fullInvoiceData, companyData);
-      showSnackbar('PDF downloaded successfully / PDF uspešno preuzet', 'success');
+      showSnackbar('PDF downloaded successfully', 'success');
     } catch (error) {
       console.error('Error downloading PDF:', error);
       showSnackbar(`Failed to download PDF: ${error.message}`, 'error');

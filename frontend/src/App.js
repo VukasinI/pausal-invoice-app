@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   AppBar,
   Toolbar,
@@ -10,6 +10,7 @@ import {
   CssBaseline,
   ThemeProvider,
   createTheme,
+  IconButton,
 } from '@mui/material';
 import {
   People as PeopleIcon,
@@ -18,6 +19,7 @@ import {
   Home as HomeIcon,
   Dashboard as DashboardIcon,
   MenuBook as BookIcon,
+  Logout as LogoutIcon,
 } from '@mui/icons-material';
 import Customers from './pages/Customers';
 import HomePage from './pages/HomePage';
@@ -25,14 +27,16 @@ import Invoices from './pages/Invoices';
 import Dashboard from './pages/Dashboard';
 import KPOKnjiga from './pages/KPOKnjiga';
 import Settings from './pages/Settings';
+import Login from './pages/Login';
+import PrivateRoute from './components/PrivateRoute';
 import './App.css';
 
 const theme = createTheme({
   palette: {
     primary: {
-      main: '#667eea',
-      light: '#8da4ef',
-      dark: '#4c63d2',
+      main: '#6B46C1',
+      light: '#8B5CF6',
+      dark: '#5B21B6',
       contrastText: '#ffffff',
     },
     secondary: {
@@ -132,9 +136,9 @@ const theme = createTheme({
           transition: 'all 0.2s ease-in-out',
         },
         contained: {
-          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          background: 'linear-gradient(135deg, #6B46C1 0%, #8B5CF6 100%)',
           '&:hover': {
-            background: 'linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%)',
+            background: 'linear-gradient(135deg, #5B21B6 0%, #7C3AED 100%)',
           },
         },
       },
@@ -163,8 +167,8 @@ const theme = createTheme({
     MuiAppBar: {
       styleOverrides: {
         root: {
-          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-          boxShadow: '0 4px 20px rgba(102, 126, 234, 0.3)',
+          background: 'linear-gradient(135deg, #6B46C1 0%, #8B5CF6 100%)',
+          boxShadow: '0 4px 20px rgba(107, 70, 193, 0.3)',
         },
       },
     },
@@ -173,16 +177,22 @@ const theme = createTheme({
 
 function Navigation() {
   const location = useLocation();
+  const navigate = useNavigate();
 
   const isActive = (path) => {
     return location.pathname === path;
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    navigate('/login');
   };
 
   return (
     <AppBar position="static">
       <Toolbar>
         <Typography variant="h6" sx={{ flexGrow: 1 }}>
-          Paušal Invoice App
+          Pausal Invoice App
         </Typography>
         <Button
           color="inherit"
@@ -191,7 +201,7 @@ function Navigation() {
           startIcon={<HomeIcon />}
           sx={{ backgroundColor: isActive('/') ? 'rgba(0,0,0,0.1)' : 'transparent' }}
         >
-          Home / Početna
+          Home
         </Button>
         <Button
           color="inherit"
@@ -209,7 +219,7 @@ function Navigation() {
           startIcon={<PeopleIcon />}
           sx={{ backgroundColor: isActive('/customers') ? 'rgba(0,0,0,0.1)' : 'transparent' }}
         >
-          Customers / Kupci
+          Customers
         </Button>
         <Button
           color="inherit"
@@ -218,7 +228,7 @@ function Navigation() {
           startIcon={<ReceiptIcon />}
           sx={{ backgroundColor: isActive('/invoices') ? 'rgba(0,0,0,0.1)' : 'transparent' }}
         >
-          Invoices / Fakture
+          Invoices
         </Button>
         <Button
           color="inherit"
@@ -227,7 +237,7 @@ function Navigation() {
           startIcon={<BookIcon />}
           sx={{ backgroundColor: isActive('/kpo') ? 'rgba(0,0,0,0.1)' : 'transparent' }}
         >
-          KPO Knjiga
+          KPO Book
         </Button>
         <Button
           color="inherit"
@@ -236,8 +246,16 @@ function Navigation() {
           startIcon={<SettingsIcon />}
           sx={{ backgroundColor: isActive('/settings') ? 'rgba(0,0,0,0.1)' : 'transparent' }}
         >
-          Settings / Podešavanja
+          Settings
         </Button>
+        <IconButton
+          color="inherit"
+          onClick={handleLogout}
+          sx={{ ml: 2 }}
+          title="Logout"
+        >
+          <LogoutIcon />
+        </IconButton>
       </Toolbar>
     </AppBar>
   );
@@ -249,22 +267,26 @@ function App() {
       <CssBaseline />
       <Router>
         <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-          <Navigation />
-          <Container component="main" sx={{ flexGrow: 1, py: 3 }}>
-            <Routes>
-              <Route path="/" element={<HomePage />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/customers" element={<Customers />} />
-              <Route path="/invoices" element={<Invoices />} />
-              <Route path="/kpo" element={<KPOKnjiga />} />
-              <Route path="/settings" element={<Settings />} />
-            </Routes>
-          </Container>
-          <Box component="footer" sx={{ bgcolor: 'background.paper', py: 2 }}>
-            <Typography variant="body2" color="text.secondary" align="center">
-              © 2024 Paušal Invoice App
-            </Typography>
-          </Box>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/*" element={
+              <PrivateRoute>
+                <>
+                  <Navigation />
+                  <Container component="main" sx={{ flexGrow: 1, py: 3 }}>
+                    <Routes>
+                      <Route path="/" element={<HomePage />} />
+                      <Route path="/dashboard" element={<Dashboard />} />
+                      <Route path="/customers" element={<Customers />} />
+                      <Route path="/invoices" element={<Invoices />} />
+                      <Route path="/kpo" element={<KPOKnjiga />} />
+                      <Route path="/settings" element={<Settings />} />
+                    </Routes>
+                  </Container>
+                </>
+              </PrivateRoute>
+            } />
+          </Routes>
         </Box>
       </Router>
     </ThemeProvider>

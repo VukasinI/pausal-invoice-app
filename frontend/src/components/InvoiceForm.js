@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -82,7 +82,7 @@ function InvoiceForm({ open, onClose, onSubmit, invoice, customers }) {
     if (open && formData.currency) {
       fetchExchangeRate(formData.currency);
     }
-  }, [open, formData.currency]);
+  }, [open, formData.currency, fetchExchangeRate]);
 
   useEffect(() => {
     calculateTotals();
@@ -115,6 +115,14 @@ function InvoiceForm({ open, onClose, onSubmit, invoice, customers }) {
       ...prev,
       [name]: value,
     }));
+    
+    // If trading date changes and currency is not RSD, update exchange rate
+    if (name === 'trading_date' && formData.currency !== 'RSD') {
+      console.log('Trading date changed to:', value, 'refreshing exchange rate for', formData.currency);
+      setTimeout(() => {
+        fetchExchangeRate(formData.currency);
+      }, 100);
+    }
   };
 
   const handleCurrencyChange = async (currency) => {
@@ -122,7 +130,7 @@ function InvoiceForm({ open, onClose, onSubmit, invoice, customers }) {
     await fetchExchangeRate(currency);
   };
 
-  const fetchExchangeRate = async (currency) => {
+  const fetchExchangeRate = useCallback(async (currency) => {
     if (currency === 'RSD') {
       setFormData(prev => ({ ...prev, exchange_rate: 1 }));
       setExchangeRateInfo({
@@ -138,10 +146,14 @@ function InvoiceForm({ open, onClose, onSubmit, invoice, customers }) {
     setRateLoading(true);
     try {
       const dateStr = format(formData.trading_date || new Date(), 'yyyy-MM-dd');
+      console.log('Fetching exchange rate for', currency, 'on date', dateStr);
+      
       const [rate, rateInfo] = await Promise.all([
         getExchangeRate(currency, 'RSD', dateStr),
         getExchangeRateInfo(currency, dateStr)
       ]);
+      
+      console.log('Exchange rate response:', { rate, rateInfo });
       
       setFormData(prev => ({ ...prev, exchange_rate: rate }));
       setExchangeRateInfo(rateInfo);
@@ -159,7 +171,7 @@ function InvoiceForm({ open, onClose, onSubmit, invoice, customers }) {
     } finally {
       setRateLoading(false);
     }
-  };
+  }, [formData.trading_date]);
 
   const refreshExchangeRate = async () => {
     await fetchExchangeRate(formData.currency);
@@ -418,7 +430,7 @@ function InvoiceForm({ open, onClose, onSubmit, invoice, customers }) {
                       formData.currency === 'RSD' 
                         ? 'Fixed at 1.0 for RSD'
                         : exchangeRateInfo?.rate_date 
-                          ? `NBS rate for ${exchangeRateInfo.rate_date}`
+                          ? `NBS rate from ${new Date(exchangeRateInfo.rate_date).toLocaleDateString('en-GB')}`
                           : 'Enter manual rate'
                     }
                     InputProps={{
